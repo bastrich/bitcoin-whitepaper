@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::hash::Hash;
+use std::rc::Rc;
 use rust_decimal::Decimal;
 use std::time::UNIX_EPOCH;
 
@@ -15,12 +17,7 @@ trait CryptoHash {
 
 struct Blockchain {
     genesis_block: LinkedBlock,
-}
-
-impl Blockchain {
-    fn new() -> Blockchain {
-
-    }
+    tx_hash_to_tx: HashMap<Vec<u8>, Rc<Tx>>,
 }
 
 struct LinkedBlock {
@@ -29,9 +26,28 @@ struct LinkedBlock {
     next: Option<Box<LinkedBlock>>,
 }
 
+impl Blockchain {
+    fn new(genesis_transactions: Vec<Tx>) -> Blockchain {
+        let genesis_block = Block::mine(genesis_transactions, [0u8; 32].to_vec());
+        let tx_hash_to_tx = genesis_block.txs.iter().map(|tx| (tx.calculate_crypto_hash(), Rc::clone(tx))).collect::<HashMap<Vec<u8>, Rc<Tx>>>();
+        Blockchain {
+            genesis_block: LinkedBlock {
+                prev: None,
+                value: genesis_block,
+                next: None,
+            },
+            tx_hash_to_tx
+        }
+    }
+
+    fn get_balance(&self, pubkey: Vec<u8>) -> Decimal {
+
+    }
+}
+
 struct Block {
     hash: Vec<u8>,
-    txs: Vec<Tx>,
+    txs: Vec<Rc<Tx>>,
     nonce: u32,
     prev_hash: Vec<u8>,
 }
@@ -61,6 +77,7 @@ impl Block {
             })
             .expect("Failed to mine block");
 
+        let txs  = txs.into_iter().map(|tx| Rc::new(tx)).collect();
 
         Block {
             hash, txs, nonce, prev_hash
@@ -70,7 +87,7 @@ impl Block {
 
 struct Tx {
     timestamp: u128,
-    input: UTXOReference,
+    input: Option<UTXOReference>,
     output: UTXOData,
     signature: Vec<u8>,
 }
@@ -82,7 +99,9 @@ impl CryptoHash for Tx {
         bytes.append(b"Tx:v1:".to_vec().as_mut());
         bytes.append(self.timestamp.to_le_bytes().to_vec().as_mut());
         bytes.push(':'.try_into().unwrap());
-        bytes.append(self.input.calculate_crypto_hash().as_mut());
+        if let Some(input) = &self.input {
+            bytes.append(input.calculate_crypto_hash().as_mut());
+        }
         bytes.push(':'.try_into().unwrap());
         bytes.append(self.output.calculate_crypto_hash().as_mut());
         bytes.push(':'.try_into().unwrap());
