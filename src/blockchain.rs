@@ -3,8 +3,7 @@ use std::hash::Hash;
 use std::rc::Rc;
 use rust_decimal::Decimal;
 use std::time::UNIX_EPOCH;
-
-
+use rust_decimal::prelude::Zero;
 use sha2::{Digest, Sha256};
 
 trait CryptoHash {
@@ -41,7 +40,30 @@ impl Blockchain {
     }
 
     fn get_balance(&self, pubkey: Vec<u8>) -> Decimal {
+        let mut balance = Decimal::zero();
 
+        let mut current_block =  Some(&self.genesis_block);
+        while let Some(linked_block) = &current_block {
+            let block = &linked_block.value;
+            for tx in &block.txs {
+                for utxo_reference in &tx.inputs {
+                    let utxo_data = &self.tx_hash_to_tx.get(&utxo_reference.tx_hash).unwrap().outputs[utxo_reference.output_index as usize];
+                    if utxo_data.pubkey == pubkey {
+                        balance -= utxo_data.amount;
+                    }
+                }
+
+                for utxo_data in &tx.outputs {
+                    if utxo_data.pubkey == pubkey {
+                        balance += utxo_data.amount;
+                    }
+                }
+            }
+
+            current_block = linked_block.next.as_deref();
+        }
+
+        balance
     }
 }
 
@@ -87,8 +109,8 @@ impl Block {
 
 struct Tx {
     timestamp: u128,
-    input: Option<UTXOReference>,
-    output: UTXOData,
+    inputs: Vec<UTXOReference>,
+    outputs: Vec<UTXOData>,
     signature: Vec<u8>,
 }
 
@@ -98,12 +120,16 @@ impl CryptoHash for Tx {
 
         bytes.append(b"Tx:v1:".to_vec().as_mut());
         bytes.append(self.timestamp.to_le_bytes().to_vec().as_mut());
-        bytes.push(':'.try_into().unwrap());
-        if let Some(input) = &self.input {
+        bytes.append(format!(":{}:", &self.inputs.len()).as_bytes().to_vec().as_mut());
+        for input in &self.inputs {
             bytes.append(input.calculate_crypto_hash().as_mut());
+            bytes.push(':'.try_into().unwrap());
         }
-        bytes.push(':'.try_into().unwrap());
-        bytes.append(self.output.calculate_crypto_hash().as_mut());
+        bytes.append(format!(":{}:", &self.outputs.len()).as_bytes().to_vec().as_mut());
+        for output in &self.outputs {
+            bytes.append(output.calculate_crypto_hash().as_mut());
+            bytes.push(':'.try_into().unwrap());
+        }
         bytes.push(':'.try_into().unwrap());
         bytes.append(self.signature.clone().as_mut());
 
@@ -138,8 +164,8 @@ impl CryptoHash for UTXOData {
     fn provide_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
-        bytes.append(b"UTXOData:v1:".to_vec().as_mut());
-        bytes.append(self.amount.serialize().to_vec().as_mut());
+        bytes.extend_from_slice(b"UTXOData:v1:");
+        bytes.extend_from_slice(&self.amount.serialize());
         bytes.push(':'.try_into().unwrap());
         bytes.append(self.pubkey.clone().as_mut());
 
