@@ -17,6 +17,7 @@ trait CryptoHash {
 struct Blockchain {
     genesis_block: LinkedBlock,
     tx_hash_to_tx: HashMap<Vec<u8>, Rc<Tx>>,
+    mempool: Vec<Tx>,
 }
 
 struct LinkedBlock {
@@ -27,7 +28,7 @@ struct LinkedBlock {
 
 impl Blockchain {
     fn new(genesis_transactions: Vec<Tx>) -> Blockchain {
-        let genesis_block = Block::mine(genesis_transactions, [0u8; 32].to_vec());
+        let genesis_block = Block::mine(0, genesis_transactions, [0u8; 32].to_vec());
         let tx_hash_to_tx = genesis_block.txs.iter().map(|tx| (tx.calculate_crypto_hash(), Rc::clone(tx))).collect::<HashMap<Vec<u8>, Rc<Tx>>>();
         Blockchain {
             genesis_block: LinkedBlock {
@@ -35,7 +36,8 @@ impl Blockchain {
                 value: genesis_block,
                 next: None,
             },
-            tx_hash_to_tx
+            tx_hash_to_tx,
+            mempool: vec![]
         }
     }
 
@@ -65,9 +67,23 @@ impl Blockchain {
 
         balance
     }
+
+    fn add_tx_to_mempool(&self, source_pubkey: Vec<u8>, amount: Decimal, destination_pubkey: Vec<u8>)  {
+
+    }
+
+    fn mine_next_block(&self) {
+        if self.mempool.is_empty() {
+            return;
+        }
+
+
+    }
 }
 
 struct Block {
+    serial_number: u64,
+    timestamp: u128,
     hash: Vec<u8>,
     txs: Vec<Rc<Tx>>,
     nonce: u32,
@@ -75,7 +91,7 @@ struct Block {
 }
 
 impl Block {
-    fn mine(txs: Vec<Tx>, prev_hash: Vec<u8>) -> Block {
+    fn mine(serial_number: u64, txs: Vec<Tx>, prev_hash: Vec<u8>) -> Block {
         let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
         let target_prefix = b"\x00\x00";
 
@@ -84,6 +100,10 @@ impl Block {
                 let mut hasher = Sha256::new();
 
                 hasher.update(b"Block:v1:");
+                hasher.update(serial_number.to_le_bytes());
+                hasher.update(b":");
+                hasher.update(timestamp.to_le_bytes());
+                hasher.update(b":");
                 for tx in &txs {
                     hasher.update(tx.calculate_crypto_hash());
                 }
@@ -102,7 +122,7 @@ impl Block {
         let txs  = txs.into_iter().map(|tx| Rc::new(tx)).collect();
 
         Block {
-            hash, txs, nonce, prev_hash
+            serial_number, timestamp, hash, txs, nonce, prev_hash
         }
     }
 }
