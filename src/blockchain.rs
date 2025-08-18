@@ -5,6 +5,12 @@ use rust_decimal::Decimal;
 use std::time::UNIX_EPOCH;
 use rust_decimal::prelude::Zero;
 use sha2::{Digest, Sha256};
+use std::mem;
+use k256::{
+    ecdsa::{SigningKey, Signature, signature::Signer},
+    SecretKey,
+};
+use rand::rngs::OsRng; // requires 'getrandom' feature
 
 trait CryptoHash {
     fn calculate_crypto_hash(&self) -> Vec<u8> {
@@ -15,27 +21,17 @@ trait CryptoHash {
 }
 
 struct Blockchain {
-    genesis_block: LinkedBlock,
+    blocks: Vec<Block>,
     tx_hash_to_tx: HashMap<Vec<u8>, Rc<Tx>>,
     mempool: Vec<Tx>,
 }
 
-struct LinkedBlock {
-    prev: Option<Box<LinkedBlock>>,
-    value: Block,
-    next: Option<Box<LinkedBlock>>,
-}
-
 impl Blockchain {
-    fn new(genesis_transactions: Vec<Tx>) -> Blockchain {
-        let genesis_block = Block::mine(0, genesis_transactions, [0u8; 32].to_vec());
+    fn new(genesis_transactions: Vec<Tx>, author_pubkey: Vec<u8>) -> Blockchain {
+        let genesis_block = Block::mine(0, author_pubkey, genesis_transactions, [0u8; 32].to_vec());
         let tx_hash_to_tx = genesis_block.txs.iter().map(|tx| (tx.calculate_crypto_hash(), Rc::clone(tx))).collect::<HashMap<Vec<u8>, Rc<Tx>>>();
         Blockchain {
-            genesis_block: LinkedBlock {
-                prev: None,
-                value: genesis_block,
-                next: None,
-            },
+            blocks: vec![genesis_block],
             tx_hash_to_tx,
             mempool: vec![]
         }
@@ -44,9 +40,7 @@ impl Blockchain {
     fn get_balance(&self, pubkey: Vec<u8>) -> Decimal {
         let mut balance = Decimal::zero();
 
-        let mut current_block =  Some(&self.genesis_block);
-        while let Some(linked_block) = &current_block {
-            let block = &linked_block.value;
+        for block in &self.blocks {
             for tx in &block.txs {
                 for utxo_reference in &tx.inputs {
                     let utxo_data = &self.tx_hash_to_tx.get(&utxo_reference.tx_hash).unwrap().outputs[utxo_reference.output_index as usize];
@@ -61,29 +55,67 @@ impl Blockchain {
                     }
                 }
             }
-
-            current_block = linked_block.next.as_deref();
         }
 
         balance
     }
 
-    fn add_tx_to_mempool(&self, source_pubkey: Vec<u8>, amount: Decimal, destination_pubkey: Vec<u8>)  {
+    fn add_tx_to_mempool(&mut self, source_pubkey: Vec<u8>, amount: Decimal, destination_pubkey: Vec<u8>)  {
+        // Signing
+        let signing_key = SigningKey::random(&mut OsRng); // Serialize with `::to_bytes()`
+        let message = b"ECDSA proves knowledge of a secret number in the context of a single message";
 
+        // Note: The signature type must be annotated or otherwise inferable as
+        // `Signer` has many impls of the `Signer` trait (for both regular and
+        // recoverable signature types).
+        let signature: Signature = signing_key.sign(message);
+
+        // Verification
+        use k256::{EncodedPoint, ecdsa::{VerifyingKey, signature::Verifier}};
+
+        let verifying_key = VerifyingKey::from(&signing_key); // Serialize with `::to_encoded_point()`
+        assert!(verifying_key.verify(message, &signature).is_ok());
+
+
+
+        self.mempool.push(
+            Tx {
+                timestamp: UNIX_EPOCH.elapsed().unwrap().as_millis(),
+                inputs: vec![],
+                outputs: vec![UTXOData {
+                    amount: Decimal::from(50),
+                    pubkey: author_pubkey.clone(),
+                }],
+                signature: vec![]
+            }
+        )
     }
 
-    fn mine_next_block(&self) {
+    fn mine_next_block(&mut self, author_pubkey: Vec<u8>) {
         if self.mempool.is_empty() {
             return;
         }
 
+        let new_block = Block::mine(
+            self.blocks.len() as u64,
+            author_pubkey,
+            mem::take(&mut self.mempool),
+            self.blocks.last().unwrap().hash.clone(),
+        );
 
+
+        for (hash, tx) in new_block.txs.iter().map(|tx| (tx.calculate_crypto_hash(), Rc::clone(tx))) {
+            self.tx_hash_to_tx.insert(hash, tx);
+        }
+
+        self.blocks.push(new_block);
     }
 }
 
 struct Block {
     serial_number: u64,
     timestamp: u128,
+    author_pubkey: Vec<u8>,
     hash: Vec<u8>,
     txs: Vec<Rc<Tx>>,
     nonce: u32,
@@ -91,9 +123,20 @@ struct Block {
 }
 
 impl Block {
-    fn mine(serial_number: u64, txs: Vec<Tx>, prev_hash: Vec<u8>) -> Block {
+    fn mine(serial_number: u64, author_pubkey: Vec<u8>, mut txs: Vec<Tx>, prev_hash: Vec<u8>) -> Block {
         let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
         let target_prefix = b"\x00\x00";
+
+        let reward_tx = Tx {
+            timestamp,
+            inputs: vec![],
+            outputs: vec![UTXOData {
+                amount: Decimal::from(50),
+                pubkey: author_pubkey.clone(),
+            }],
+            signature: vec![]
+        };
+        txs.insert(0, reward_tx);
 
         let (nonce, hash) = (0..=u32::MAX)
             .find_map(|nonce| {
@@ -122,7 +165,7 @@ impl Block {
         let txs  = txs.into_iter().map(|tx| Rc::new(tx)).collect();
 
         Block {
-            serial_number, timestamp, hash, txs, nonce, prev_hash
+            serial_number, timestamp, author_pubkey, hash, txs, nonce, prev_hash
         }
     }
 }
