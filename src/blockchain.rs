@@ -10,6 +10,7 @@ use k256::{
     ecdsa::{SigningKey, Signature, signature::Signer},
     SecretKey,
 };
+use k256::ecdsa::VerifyingKey;
 use rand::rngs::OsRng; // requires 'getrandom' feature
 
 trait CryptoHash {
@@ -60,22 +61,18 @@ impl Blockchain {
         balance
     }
 
-    fn add_tx_to_mempool(&mut self, source_pubkey: Vec<u8>, amount: Decimal, destination_pubkey: Vec<u8>)  {
-        // Signing
-        let signing_key = SigningKey::random(&mut OsRng); // Serialize with `::to_bytes()`
-        let message = b"ECDSA proves knowledge of a secret number in the context of a single message";
+    fn add_tx_to_mempool(&mut self, source_private_key: Vec<u8>, amount: Decimal, destination_pubkey: Vec<u8>)  {
 
-        // Note: The signature type must be annotated or otherwise inferable as
-        // `Signer` has many impls of the `Signer` trait (for both regular and
-        // recoverable signature types).
-        let signature: Signature = signing_key.sign(message);
 
-        // Verification
-        use k256::{EncodedPoint, ecdsa::{VerifyingKey, signature::Verifier}};
 
-        let verifying_key = VerifyingKey::from(&signing_key); // Serialize with `::to_encoded_point()`
-        assert!(verifying_key.verify(message, &signature).is_ok());
 
+        let signing_key = SigningKey::from_bytes(source_private_key.as_slice().into()).unwrap();
+        let verifying_key = VerifyingKey::from(&signing_key);
+
+
+
+        let signature: Signature = signing_key.sign(b"test");
+        let signature_bytes = signature.to_bytes().to_vec();
 
 
         self.mempool.push(
@@ -86,7 +83,7 @@ impl Blockchain {
                     amount: Decimal::from(50),
                     pubkey: author_pubkey.clone(),
                 }],
-                signature: vec![]
+                signature: signature_bytes
             }
         )
     }
