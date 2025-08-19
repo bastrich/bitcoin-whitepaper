@@ -9,3 +9,4 @@ sha2 = "0.10.9"
 k256 = {version = "0.13.4", features = ["ecdsa"]}
 rand_core = "0.9.3"
 rand = "0.8.5"
+derivative = "2.2.0"
