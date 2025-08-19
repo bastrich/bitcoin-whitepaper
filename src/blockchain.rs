@@ -82,7 +82,10 @@ impl Blockchain {
                     }
 
                     let tx_hash = tx.calculate_crypto_hash();
-                    tx.outputs.iter().enumerate().for_each(|(i, output)| {
+                    tx.outputs.iter()
+                        .filter(|output| output.pubkey == source_pubkey)
+                        .enumerate()
+                        .for_each(|(i, output)| {
                         outputs.insert(UTXOReference {
                             tx_hash: tx_hash.clone(),
                             output_index: i as u32,
@@ -107,6 +110,15 @@ impl Blockchain {
         amount: Decimal,
         destination_pubkey: Vec<u8>,
     ) -> Tx {
+        Tx {
+            timestamp: UNIX_EPOCH.elapsed().unwrap().as_millis(),
+            inputs: vec![],
+            outputs: vec![UTXOData {
+                amount: Decimal::from(50),
+                pubkey: author_pubkey.clone(),
+            }],
+            signature: signature_bytes,
+        }
     }
 
     fn add_tx_to_mempool(
@@ -121,15 +133,7 @@ impl Blockchain {
         let signature: Signature = signing_key.sign(b"test");
         let signature_bytes = signature.to_bytes().to_vec();
 
-        self.mempool.push(Tx {
-            timestamp: UNIX_EPOCH.elapsed().unwrap().as_millis(),
-            inputs: vec![],
-            outputs: vec![UTXOData {
-                amount: Decimal::from(50),
-                pubkey: author_pubkey.clone(),
-            }],
-            signature: signature_bytes,
-        })
+        self.mempool.push()
     }
 
     fn mine_next_block(&mut self, author_pubkey: Vec<u8>) {
