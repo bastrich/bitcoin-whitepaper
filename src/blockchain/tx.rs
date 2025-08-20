@@ -3,7 +3,8 @@ use std::time::UNIX_EPOCH;
 use k256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use k256::ecdsa::signature::{Signer, Verifier};
 use rand::rngs::OsRng;
-use crate::blockchain::{CryptoHash, UTXOData, UTXOReference};
+use crate::blockchain::{CryptoHash};
+use crate::blockchain::utxo::{UTXOData, UTXOReference};
 
 pub struct Tx {
     timestamp: u128,

@@ -1,5 +1,6 @@
 mod tx;
-
+mod block;
+mod utxo;
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
@@ -8,10 +9,11 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::mem;
 use std::rc::{Rc, Weak};
-use std::time::UNIX_EPOCH; // requires 'getrandom' feature
 
 use derivative::Derivative;
+use crate::blockchain::block::Block;
 use crate::blockchain::tx::Tx;
+use crate::blockchain::utxo::{UTXOData, UTXOReference};
 
 trait CryptoHash {
     fn calculate_crypto_hash(&self) -> Vec<u8> {
@@ -180,118 +182,5 @@ impl Blockchain {
         }
 
         self.blocks.push(new_block);
-    }
-}
-
-struct Block {
-    serial_number: u64,
-    timestamp: u128,
-    author_pubkey: Vec<u8>,
-    hash: Vec<u8>,
-    txs: Vec<Rc<Tx>>,
-    nonce: u32,
-    prev_hash: Vec<u8>,
-}
-
-impl Block {
-    fn mine(
-        serial_number: u64,
-        author_pubkey: Vec<u8>,
-        author_private_key: Vec<u8>,
-        mut txs: Vec<Tx>,
-        prev_hash: Vec<u8>,
-    ) -> Block {
-        let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
-        let target_prefix = b"\x00\x00";
-
-        let reward_tx = Tx::new(
-            vec![],
-            vec![Rc::new(UTXOData {
-                amount: Decimal::from(50),
-                pubkey: author_pubkey.clone(),
-            })],
-            author_private_key
-        );
-        txs.insert(0, reward_tx);
-
-        let (nonce, hash) = (0..=u32::MAX)
-            .find_map(|nonce| {
-                let mut hasher = Sha256::new();
-
-                hasher.update(b"Block:v1:");
-                hasher.update(serial_number.to_le_bytes());
-                hasher.update(b":");
-                hasher.update(timestamp.to_le_bytes());
-                hasher.update(b":");
-                for tx in &txs {
-                    hasher.update(tx.calculate_crypto_hash());
-                }
-                hasher.update(nonce.to_le_bytes());
-                hasher.update(prev_hash.as_slice());
-
-                let hash = hasher.finalize();
-                if hash.starts_with(target_prefix) {
-                    Some((nonce, hash.to_vec()))
-                } else {
-                    None
-                }
-            })
-            .expect("Failed to mine block");
-
-        let txs = txs.into_iter().map(|tx| Rc::new(tx)).collect();
-
-        Block {
-            serial_number,
-            timestamp,
-            author_pubkey,
-            hash,
-            txs,
-            nonce,
-            prev_hash,
-        }
-    }
-}
-
-
-
-#[derive(Derivative)]
-#[derivative(PartialEq, Eq, Hash)]
-struct UTXOReference {
-    tx_hash: Vec<u8>,
-    output_index: u32,
-    #[derivative(PartialEq="ignore")]
-    #[derivative(Hash="ignore")]
-    data: Weak<UTXOData>
-}
-
-impl CryptoHash for UTXOReference {
-    fn provide_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.append(b"UTXOReference:v1:".to_vec().as_mut());
-        bytes.append(self.tx_hash.clone().as_mut());
-        bytes.push(':'.try_into().unwrap());
-        bytes.append(self.output_index.to_le_bytes().to_vec().as_mut());
-
-        bytes
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-struct UTXOData {
-    amount: Decimal,
-    pubkey: Vec<u8>,
-}
-
-impl CryptoHash for UTXOData {
-    fn provide_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.extend_from_slice(b"UTXOData:v1:");
-        bytes.extend_from_slice(&self.amount.serialize());
-        bytes.push(':'.try_into().unwrap());
-        bytes.append(self.pubkey.clone().as_mut());
-
-        bytes
     }
 }

@@ -1,0 +1,76 @@
+use std::rc::Rc;
+use std::time::UNIX_EPOCH;
+use rust_decimal::Decimal;
+use sha2::{Digest, Sha256};
+use crate::blockchain::CryptoHash;
+use crate::blockchain::tx::Tx;
+use crate::blockchain::utxo::UTXOData;
+
+pub struct Block {
+    pub serial_number: u64,
+    pub timestamp: u128,
+    pub author_pubkey: Vec<u8>,
+    pub hash: Vec<u8>,
+    pub txs: Vec<Rc<Tx>>,
+    pub nonce: u32,
+    pub prev_hash: Vec<u8>,
+}
+
+impl Block {
+    pub fn mine(
+        serial_number: u64,
+        author_pubkey: Vec<u8>,
+        author_private_key: Vec<u8>,
+        mut txs: Vec<Tx>,
+        prev_hash: Vec<u8>,
+    ) -> Block {
+        let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
+        let target_prefix = b"\x00\x00";
+
+        let reward_tx = Tx::new(
+            vec![],
+            vec![Rc::new(UTXOData {
+                amount: Decimal::from(50),
+                pubkey: author_pubkey.clone(),
+            })],
+            author_private_key
+        );
+        txs.insert(0, reward_tx);
+
+        let (nonce, hash) = (0..=u32::MAX)
+            .find_map(|nonce| {
+                let mut hasher = Sha256::new();
+
+                hasher.update(b"Block:v1:");
+                hasher.update(serial_number.to_le_bytes());
+                hasher.update(b":");
+                hasher.update(timestamp.to_le_bytes());
+                hasher.update(b":");
+                for tx in &txs {
+                    hasher.update(tx.calculate_crypto_hash());
+                }
+                hasher.update(nonce.to_le_bytes());
+                hasher.update(prev_hash.as_slice());
+
+                let hash = hasher.finalize();
+                if hash.starts_with(target_prefix) {
+                    Some((nonce, hash.to_vec()))
+                } else {
+                    None
+                }
+            })
+            .expect("Failed to mine block");
+
+        let txs = txs.into_iter().map(|tx| Rc::new(tx)).collect();
+
+        Block {
+            serial_number,
+            timestamp,
+            author_pubkey,
+            hash,
+            txs,
+            nonce,
+            prev_hash,
+        }
+    }
+}
