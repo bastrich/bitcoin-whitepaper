@@ -1,6 +1,7 @@
 mod tx;
 mod block;
 mod utxo;
+mod testaaa;
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
@@ -15,13 +16,6 @@ use crate::blockchain::block::Block;
 use crate::blockchain::tx::Tx;
 use crate::blockchain::utxo::{UTXOData, UTXOReference};
 
-trait CryptoHash {
-    fn calculate_crypto_hash(&self) -> Vec<u8> {
-        Sha256::digest(self.provide_bytes().as_slice()).to_vec()
-    }
-
-    fn provide_bytes(&self) -> Vec<u8>;
-}
 
 struct Blockchain {
     blocks: Vec<Block>,

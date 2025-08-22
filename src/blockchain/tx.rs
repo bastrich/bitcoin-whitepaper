@@ -1,80 +1,88 @@
+use crate::blockchain::utxo::{UTXOData, UTXOReference};
+use crate::crypto::{CryptoHash, K256PrivateSignatureKey, K256PublicSignatureKey, PrivateSignatureKey, PublicSignatureKey};
+use k256::ecdsa::signature::{Signer, Verifier};
+use k256::ecdsa::{Signature, SigningKey, VerifyingKey};
+use rand::rngs::OsRng;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::time::UNIX_EPOCH;
-use k256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use k256::ecdsa::signature::{Signer, Verifier};
-use rand::rngs::OsRng;
-use crate::blockchain::{CryptoHash};
-use crate::blockchain::utxo::{UTXOData, UTXOReference};
 
-pub struct Tx {
+trait Tx: CryptoHash {
+    fn hash(&self) -> Vec<u8>;
+}
+
+
+
+
+// type Tx = Tx<64>;
+
+// pub enum Tx {
+//     K256Tx(SignedTx<64>)
+// }
+
+pub struct SignedTx<const N: usize> {
     timestamp: u128,
     pub inputs: Vec<UTXOReference>,
     pub outputs: Vec<Rc<UTXOData>>,
-    signature: Vec<u8>,
+    signature: [u8; N]
 }
 
-impl Tx {
-    pub fn new(inputs: Vec<UTXOReference>, outputs: Vec<Rc<UTXOData>>, private_signature_key: Vec<u8>) -> Self {
+impl SignedTx<64> {
+    pub fn new(
+        inputs: Vec<UTXOReference>,
+        outputs: Vec<Rc<UTXOData>>,
+        private_signature_key: &K256PrivateSignatureKey,
+    ) -> Result<Self, String> {
+        if outputs.is_empty() {
+            return Err("No outputs specified".to_string());
+        }
+
         let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
+        let signature_bytes = private_signature_key
+            .sign(Self::convert_to_bytes(timestamp, &inputs, &outputs).deref());
 
-        let bytes = Self::build_bytes(timestamp, &inputs, &outputs);
-
-        let signing_key = SigningKey::from_bytes(private_signature_key.as_slice().into()).unwrap();
-        let signature: Signature = signing_key.sign(bytes.as_slice());
-        let signature_bytes = signature.to_bytes().to_vec();
-
-        Tx { timestamp, inputs, outputs, signature: signature_bytes }
+        Ok(Self {
+            timestamp,
+            inputs,
+            outputs,
+            signature: signature_bytes,
+        })
     }
 
-    pub fn verify(&self, public_signature_key: Vec<u8>) -> bool {
-        let bytes = Self::build_bytes(
-            self.timestamp,
-            &self.inputs,
-            &self.outputs,
-        );
-        let verifying_key = VerifyingKey::from_sec1_bytes(public_signature_key.as_slice()).unwrap();
-        verifying_key.verify(bytes.as_slice(), &Signature::from_bytes(self.signature.as_slice().into()).unwrap()).is_ok()
+    pub fn verify(&self, public_signature_key: K256PublicSignatureKey) -> bool {
+        let bytes = Self::convert_to_bytes(self.timestamp, &self.inputs, &self.outputs);
+        public_signature_key.verify(&bytes, &self.signature)
     }
 
-    fn build_bytes(timestamp: u128, inputs: &Vec<UTXOReference>, outputs: &Vec<Rc<UTXOData>>) -> Vec<u8> {
+    fn convert_to_bytes(
+        timestamp: u128,
+        inputs: &Vec<UTXOReference>,
+        outputs: &Vec<Rc<UTXOData>>,
+    ) -> Vec<u8> {
         let mut bytes = vec![];
 
         bytes.append(b"Tx:v1:".to_vec().as_mut());
         bytes.append(timestamp.to_le_bytes().to_vec().as_mut());
-        bytes.append(
-            format!(":{}:", inputs.len())
-                .as_bytes()
-                .to_vec()
-                .as_mut(),
-        );
+        bytes.append(format!(":{}:", inputs.len()).as_bytes().to_vec().as_mut());
         for input in inputs {
-            bytes.append(input.calculate_crypto_hash().as_mut());
+            bytes.extend_from_slice(&input.calculate_crypto_hash());
             bytes.push(':'.try_into().unwrap());
         }
-        bytes.append(
-            format!(":{}", outputs.len())
-                .as_bytes()
-                .to_vec()
-                .as_mut(),
-        );
+        bytes.append(format!(":{}", outputs.len()).as_bytes().to_vec().as_mut());
         for output in outputs {
             bytes.push(':'.try_into().unwrap());
-            bytes.append(output.calculate_crypto_hash().as_mut());
+            bytes.extend_from_slice(&output.calculate_crypto_hash());
         }
 
         bytes
     }
 }
 
-impl CryptoHash for Tx {
+impl CryptoHash for SignedTx<64> {
     fn provide_bytes(&self) -> Vec<u8> {
-        let mut bytes = Self::build_bytes(
-            self.timestamp,
-            &self.inputs,
-            &self.outputs,
-        );
+        let mut bytes = Self::convert_to_bytes(self.timestamp, &self.inputs, &self.outputs);
 
-        bytes.append(self.signature.clone().as_mut());
+        bytes.extend_from_slice(&self.signature);
 
         bytes
     }

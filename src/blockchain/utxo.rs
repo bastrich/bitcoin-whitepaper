@@ -1,7 +1,7 @@
 use std::rc::Weak;
 use derivative::Derivative;
 use rust_decimal::Decimal;
-use crate::blockchain::CryptoHash;
+use crate::crypto::CryptoHash;
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Hash)]

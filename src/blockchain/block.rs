@@ -3,7 +3,6 @@ use std::time::UNIX_EPOCH;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
 use sha2::{Digest, Sha256};
-use crate::blockchain::CryptoHash;
 use crate::blockchain::tx::Tx;
 use crate::blockchain::utxo::UTXOData;
 
