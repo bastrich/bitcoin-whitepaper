@@ -21,6 +21,7 @@ pub trait PrivateSignatureKey<const N: usize> {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug)]
 pub struct K256PublicSignatureKey {
     key: PublicKey
 }
@@ -99,6 +100,24 @@ mod tests {
         let data = generate_random_bytes();
         let signature = private_key.sign(&data);
         assert!(public_key.verify(&data, &signature));
+    }
+
+    #[test]
+    fn test_serialize_deserialize_public_key() {
+        let private_key = K256PrivateSignatureKey::generate();
+        let public_key = private_key.get_public_key();
+
+        let public_key_bytes = public_key.to_bytes();
+        assert_eq!(K256PublicSignatureKey::from_bytes(&public_key_bytes), public_key);
+    }
+
+    #[test]
+    fn test_not_corresponding_keys() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let public_key_2 = private_key_2.get_public_key();
+
+        assert!(!private_key_1.is_pair_for(public_key_2));
     }
 
     fn generate_random_bytes() -> Vec<u8> {
