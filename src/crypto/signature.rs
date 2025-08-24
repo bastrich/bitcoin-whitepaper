@@ -3,10 +3,10 @@ use secp256k1::{Secp256k1, Message};
 use secp256k1::ecdsa::Signature;
 use sha2::{Digest, Sha256};
 
-pub trait PublicSignatureKey<const N: usize>: Eq {
-    fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; N]) -> bool;
+pub trait PublicSignatureKey<const N: usize>: Eq + Sized {
+    fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; N]) -> Result<(), String>;
     fn to_bytes(&self) -> impl AsRef<[u8]>;
-    fn from_bytes(bytes: impl AsRef<[u8]>) -> Self;
+    fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, String>;
 }
 
 pub trait PrivateSignatureKey<const N: usize> {
@@ -35,12 +35,14 @@ impl K256PublicSignatureKey {
 }
 
 impl PublicSignatureKey<64> for K256PublicSignatureKey {
-    fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; 64]) -> bool {
-        let signature =  Signature::from_compact(signature).unwrap();
+    fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; 64]) -> Result<(), String> {
+        let signature =  Signature::from_compact(signature)
+            .map_err(|e| format!("Signature could not be decoded: {e}"))?;
         if Self::is_high_s(&signature) {
-            return false;
+            return Err("Signature should have low s".to_string());
         }
-        signature.verify(Message::from_digest(Sha256::digest(data).into()), &self.key).is_ok()
+        signature.verify(Message::from_digest(Sha256::digest(data).into()), &self.key)
+            .map_err(|e| format!("Signature could not be decoded: {e}"))
     }
 
     #[allow(refining_impl_trait)]
@@ -48,10 +50,11 @@ impl PublicSignatureKey<64> for K256PublicSignatureKey {
         self.key.serialize()
     }
 
-    fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
-        Self {
-            key: PublicKey::from_byte_array_compressed(bytes.as_ref().try_into().expect("expected exactly 33 bytes")).unwrap()
-        }
+    fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, String> {
+        Ok(Self {
+            key: PublicKey::from_byte_array_compressed(bytes.as_ref().try_into().map_err(|e| format!("Expected exactly 33 bytes: {e}"))?)
+                .map_err(|e| format!("Error creating public key from bytes: {e}"))?
+        })
     }
 }
 
@@ -99,7 +102,7 @@ mod tests {
 
         let data = generate_random_bytes();
         let signature = private_key.sign(&data);
-        assert!(public_key.verify(&data, &signature));
+        assert!(public_key.verify(&data, &signature).is_ok());
     }
 
     #[test]
@@ -108,7 +111,7 @@ mod tests {
         let public_key = private_key.get_public_key();
 
         let public_key_bytes = public_key.to_bytes();
-        assert_eq!(K256PublicSignatureKey::from_bytes(&public_key_bytes), public_key);
+        assert_eq!(K256PublicSignatureKey::from_bytes(&public_key_bytes).unwrap(), public_key);
     }
 
     #[test]
