@@ -37,12 +37,12 @@ impl Tx {
                     return Err("Ounlly singlke".to_string());
 
                 }
-                if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(output_pubkeys[0])) {
+                if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(output_pubkeys[0])?) {
                     return Err("Invalid public key".to_string());
                 }
             }
             1 => {
-                if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(input_pubkeys[0])) {
+                if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(input_pubkeys[0])?) {
                     return Err("Invalid public key".to_string());
                 }
             }
@@ -68,7 +68,7 @@ impl Tx {
         })
     }
 
-    pub fn verify(&self, public_signature_key: K256PublicSignatureKey) -> bool {
+    pub fn verify(&self, public_signature_key: K256PublicSignatureKey) -> Result<(), String> {
         let bytes = Self::convert_to_bytes(&self.inputs, &self.outputs);
         public_signature_key.verify(&bytes, &self.signature)
     }
@@ -96,6 +96,7 @@ impl Tx {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn test_create_and_verify() {

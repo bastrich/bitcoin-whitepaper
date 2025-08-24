@@ -26,22 +26,11 @@ pub struct K256PublicSignatureKey {
     key: PublicKey
 }
 
-impl K256PublicSignatureKey {
-    fn is_high_s(signature: &Signature) -> bool {
-        let mut normalized_signature = signature.clone();
-        normalized_signature.normalize_s();
-        signature != &normalized_signature
-    }
-}
-
 impl PublicSignatureKey<64> for K256PublicSignatureKey {
     fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; 64]) -> Result<(), String> {
-        let signature =  Signature::from_compact(signature)
-            .map_err(|e| format!("Signature could not be decoded: {e}"))?;
-        if Self::is_high_s(&signature) {
-            return Err("Signature should have low s".to_string());
-        }
-        signature.verify(Message::from_digest(Sha256::digest(data).into()), &self.key)
+        Signature::from_compact(signature)
+            .map_err(|e| format!("Signature could not be decoded: {e}"))?
+            .verify(Message::from_digest(Sha256::digest(data).into()), &self.key)
             .map_err(|e| format!("Signature could not be decoded: {e}"))
     }
 
