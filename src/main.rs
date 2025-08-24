@@ -2,10 +2,6 @@
 
 
 fn main() {
-    let genesis_block = Block {
-
-    }
-
     println!(
         "Welcome to Bitcoin!
 Use the following commands:

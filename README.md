@@ -10,4 +10,7 @@
 - Improved nonce search algorithm (not sequential bruteforce)
 - Store precalculated available UTXOs instead of iteration through the whole blockchain
 
-# May lack of features for real-world usage, treat it as a project to demonstrate and understand how Blockchain works 
+# Keep in mind that it doesn't implement any BIPs and may lack of features for real-world usage, treat it as a project to demonstrate and understand how Blockchain works 
+
+# Windows
+First install [Desktop development with C++](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation) (required for `secp256k1`).

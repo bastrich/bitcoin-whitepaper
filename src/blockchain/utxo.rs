@@ -1,46 +1,51 @@
 use std::rc::Weak;
 use derivative::Derivative;
 use rust_decimal::Decimal;
-use crate::crypto::CryptoHash;
+use sha2::{Digest, Sha256};
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Hash)]
 pub struct UTXOReference {
-    pub tx_hash: Vec<u8>,
+    pub tx_hash: [u8; 32],
     pub output_index: u32,
     #[derivative(PartialEq="ignore")]
     #[derivative(Hash="ignore")]
     pub data: Weak<UTXOData>
 }
 
-impl CryptoHash for UTXOReference {
-    fn provide_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.append(b"UTXOReference:v1:".to_vec().as_mut());
-        bytes.append(self.tx_hash.clone().as_mut());
-        bytes.push(':'.try_into().unwrap());
-        bytes.append(self.output_index.to_le_bytes().to_vec().as_mut());
-
-        bytes
+impl UTXOReference {
+    pub fn calculate_crypto_hash(&self) -> impl AsRef<[u8]> {
+        let mut hasher = Sha256::new();
+        hasher.update("UTXOReference:v1:");
+        hasher.update(&self.tx_hash);
+        hasher.update(":");
+        hasher.update(&self.output_index.to_le_bytes());
+        hasher.finalize()
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq)]
 pub struct UTXOData {
     pub amount: Decimal,
-    pub pubkey: Vec<u8>,
+    pub pubkey: [u8; 33],
 }
 
-impl CryptoHash for UTXOData {
-    fn provide_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
+impl UTXOData {
+    pub fn calculate_crypto_hash(&self) -> impl AsRef<[u8]> {
+        let mut hasher = Sha256::new();
+        hasher.update("UTXOData:v1:");
+        hasher.update(&self.amount.serialize());
+        hasher.update(":");
+        hasher.update(&self.pubkey);
+        hasher.finalize()
+    }
+}
 
-        bytes.extend_from_slice(b"UTXOData:v1:");
-        bytes.extend_from_slice(&self.amount.serialize());
-        bytes.push(':'.try_into().unwrap());
-        bytes.append(self.pubkey.clone().as_mut());
+#[cfg(test)]
+mod tests {
 
-        bytes
+    #[test]
+    fn test_hash() {
+
     }
 }

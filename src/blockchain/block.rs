@@ -5,11 +5,12 @@ use rust_decimal::prelude::Zero;
 use sha2::{Digest, Sha256};
 use crate::blockchain::tx::Tx;
 use crate::blockchain::utxo::UTXOData;
+use crate::crypto::signature::{K256PrivateSignatureKey, K256PublicSignatureKey, PublicSignatureKey};
 
 pub struct Block {
     pub serial_number: u64,
     pub timestamp: u128,
-    pub author_pubkey: Vec<u8>,
+    pub author_pubkey: K256PublicSignatureKey,
     pub hash: Vec<u8>,
     pub txs: Vec<Rc<Tx>>,
     pub nonce: u32,
@@ -19,8 +20,8 @@ pub struct Block {
 impl Block {
     pub fn mine(
         serial_number: u64,
-        author_pubkey: Vec<u8>,
-        author_private_key: Vec<u8>,
+        author_pubkey: K256PublicSignatureKey,
+        author_private_key: K256PrivateSignatureKey,
         mut txs: Vec<Tx>,
         prev_hash: Vec<u8>,
     ) -> Block {
@@ -29,7 +30,7 @@ impl Block {
 
         let mut coinbase_outputs = vec![Rc::new(UTXOData {
             amount: Decimal::from(50),
-            pubkey: author_pubkey.clone(),
+            pubkey: author_pubkey.to_bytes(),
         })];
         let fee: Decimal  = txs.iter()
             .map(|tx| {
@@ -41,14 +42,14 @@ impl Block {
         if fee > Decimal::zero() {
             coinbase_outputs.push(Rc::new(UTXOData {
                 amount: Decimal::from(fee),
-                pubkey: author_pubkey.clone(),
+                pubkey: author_pubkey.to_bytes(),
             }))
         }
         let coinbase_tx = Tx::new(
             vec![],
             coinbase_outputs,
-            author_private_key
-        );
+            &author_private_key
+        ).unwrap();
         txs.insert(0, coinbase_tx);
 
         let (nonce, hash) = (0..=u32::MAX)
@@ -61,7 +62,7 @@ impl Block {
                 hasher.update(timestamp.to_le_bytes());
                 hasher.update(b":");
                 for tx in &txs {
-                    hasher.update(tx.calculate_crypto_hash());
+                    hasher.update(tx.hash);
                 }
                 hasher.update(nonce.to_le_bytes());
                 hasher.update(prev_hash.as_slice());
