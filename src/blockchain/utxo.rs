@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 
 #[derive(Derivative)]
-#[derivative(PartialEq, Eq, Hash)]
+#[derivative(PartialEq, Eq, Hash, Clone)]
 pub struct UTXOReference {
     pub tx_hash: [u8; 32],
     pub output_index: u32,

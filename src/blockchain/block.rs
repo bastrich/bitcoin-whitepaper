@@ -11,22 +11,23 @@ pub struct Block {
     pub serial_number: u64,
     pub timestamp: u128,
     pub author_pubkey: K256PublicSignatureKey,
-    pub hash: Vec<u8>,
+    pub hash: [u8; 32],
     pub txs: Vec<Rc<Tx>>,
     pub nonce: u32,
-    pub prev_hash: Vec<u8>,
+    pub prev_hash: [u8; 32],
 }
 
 impl Block {
+    const TARGET_PREFIX: [u8; 1] = [0];
+    
     pub fn mine(
         serial_number: u64,
         author_pubkey: K256PublicSignatureKey,
         author_private_key: K256PrivateSignatureKey,
         mut txs: Vec<Tx>,
-        prev_hash: Vec<u8>,
-    ) -> Block {
+        prev_hash: [u8; 32],
+    ) -> Result<Block, String> {
         let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
-        let target_prefix = b"\x00\x00";
 
         let mut coinbase_outputs = vec![Rc::new(UTXOData {
             amount: Decimal::from(50),
@@ -67,9 +68,9 @@ impl Block {
                 hasher.update(nonce.to_le_bytes());
                 hasher.update(prev_hash.as_slice());
 
-                let hash = hasher.finalize();
-                if hash.starts_with(target_prefix) {
-                    Some((nonce, hash.to_vec()))
+                let hash: [u8; 32] = hasher.finalize().into();
+                if hash.starts_with(&Self::TARGET_PREFIX) {
+                    Some((nonce, hash))
                 } else {
                     None
                 }
@@ -78,7 +79,7 @@ impl Block {
 
         let txs = txs.into_iter().map(|tx| Rc::new(tx)).collect();
 
-        Block {
+        Ok(Block {
             serial_number,
             timestamp,
             author_pubkey,
@@ -86,6 +87,15 @@ impl Block {
             txs,
             nonce,
             prev_hash,
-        }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    
+    #[test]
+    fn test_mine() {
+        
     }
 }

@@ -22,8 +22,13 @@ impl Tx {
             return Err("No outputs specified".to_string());
         }
 
+        let has_duplicated_inputs = inputs.iter().unique().count() < inputs.len();
+        if has_duplicated_inputs {
+            return Err("Duplicated inputs specified".to_string());
+        }
+
         let input_pubkeys: Vec<[u8; 33]> = inputs.iter()
-            .map(|input| input.data.upgrade().unwrap().pubkey)
+            .map(|input| input.data.upgrade().expect("Expected valid UTXO data reference").pubkey)
             .unique()
             .collect();
 
@@ -34,20 +39,20 @@ impl Tx {
                     .unique()
                     .collect();
                 if output_pubkeys.len() > 1 {
-                    return Err("Ounlly singlke".to_string());
+                    return Err("If there are no inputs, only a single destination (mining fee) allowed".to_string());
 
                 }
                 if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(output_pubkeys[0])?) {
-                    return Err("Invalid public key".to_string());
+                    return Err("If there are no inputs, public key of the output should correspond to the signer private key".to_string());
                 }
             }
             1 => {
                 if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(input_pubkeys[0])?) {
-                    return Err("Invalid public key".to_string());
+                    return Err("Public key of the inputs should correspond to the signer private key".to_string());
                 }
             }
             _ => {
-                return Err("Only single sender possible".to_string());
+                return Err("Only a single source address allowed".to_string());
             }
         }
 
@@ -96,10 +101,178 @@ impl Tx {
 
 #[cfg(test)]
 mod tests {
+    use std::any::Any;
+    use std::rc::Weak;
+    use rand_core::RngCore;
+    use rust_decimal::Decimal;
+    use secp256k1::rand;
+    use secp256k1::rand::Rng;
     use super::*;
 
     #[test]
-    fn test_create_and_verify() {
+    fn test_no_outputs() {
+        let private_key = K256PrivateSignatureKey::generate();
 
+        assert_error(
+            Tx::new(vec![], vec![], &private_key),
+            "No outputs specified"
+        );
+    }
+
+    #[test]
+    fn test_duplicated_inputs() {
+        let private_key = K256PrivateSignatureKey::generate();
+        let utxo_data = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key.get_public_key().to_bytes()
+        });
+        let utxo_reference = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Weak::new()
+        };
+        let utxo_reference_duplicate = utxo_reference.clone();
+
+        assert_error(
+            Tx::new(vec![utxo_reference, utxo_reference_duplicate], vec![Rc::clone(&utxo_data)], &private_key),
+            "Duplicated inputs specified"
+        );
+    }
+
+    #[test]
+    fn test_no_inputs_single_destination() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let utxo_data_1 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+        let utxo_data_2 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_2.get_public_key().to_bytes()
+        });
+
+        assert_error(
+            Tx::new(vec![], vec![Rc::clone(&utxo_data_1), Rc::clone(&utxo_data_2)], &private_key_1),
+            "If there are no inputs, only a single destination (mining fee) allowed"
+        );
+    }
+
+    #[test]
+    fn test_no_inputs_destination_key_pair() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let utxo_data = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+
+        assert_error(
+            Tx::new(vec![], vec![Rc::clone(&utxo_data)], &private_key_2),
+            "If there are no inputs, public key of the output should correspond to the signer private key"
+        );
+    }
+
+    #[test]
+    fn test_source_key_pair() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let utxo_data = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+        let utxo_reference = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&utxo_data)
+        };
+
+        assert_error(
+            Tx::new(vec![utxo_reference], vec![Rc::clone(&utxo_data)], &private_key_2),
+            "Public key of the inputs should correspond to the signer private key"
+        );
+    }
+
+    #[test]
+    fn test_multiple_sources() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let utxo_data_1 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+        let utxo_data_2 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_2.get_public_key().to_bytes()
+        });
+        let utxo_reference_1 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&utxo_data_1)
+        };
+        let utxo_reference_2 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&utxo_data_2)
+        };
+        assert_error(
+            Tx::new(vec![utxo_reference_1, utxo_reference_2], vec![Rc::clone(&utxo_data_1)], &private_key_1),
+            "Only a single source address allowed"
+        );
+    }
+
+    #[test]
+    fn test_create_and_verify() {
+        let private_key_1 = K256PrivateSignatureKey::generate();
+        let utxo_data_1 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+        let utxo_data_2 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_1.get_public_key().to_bytes()
+        });
+        let utxo_reference_1 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&utxo_data_1)
+        };
+        let utxo_reference_2 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&utxo_data_2)
+        };
+
+        let private_key_2 = K256PrivateSignatureKey::generate();
+        let utxo_data_3 = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: private_key_2.get_public_key().to_bytes()
+        });
+
+        let tx = Tx::new(
+            vec![utxo_reference_1, utxo_reference_2],
+            vec![Rc::clone(&utxo_data_3)],
+            &private_key_1,
+        ).expect("Successfully creating transaction expected");
+
+        assert!(tx.verify(private_key_1.get_public_key()).is_ok());
+        assert_error(
+            tx.verify(private_key_2.get_public_key()),
+            "Signature could not be decoded: signature failed verification"
+        );
+    }
+
+    fn generate_random_bytes<const N: usize>() -> [u8; N] {
+        let mut random_generator = rand::rng();
+        let mut bytes = [0u8; N];
+        random_generator.fill_bytes(&mut bytes);
+        bytes
+    }
+
+    fn assert_error(result: Result<impl Any, String>, expected_error: &str) {
+        match result {
+            Ok(_) => assert!(false, "Expected an error: {}", expected_error),
+            Err(error) => assert_eq!(error, expected_error),
+        }
     }
 }

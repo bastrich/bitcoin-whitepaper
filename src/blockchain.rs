@@ -21,7 +21,7 @@ struct Blockchain {
 
 impl Blockchain {
     fn new(genesis_transactions: Vec<Tx>, author_pubkey: K256PublicSignatureKey, author_private_key: K256PrivateSignatureKey) -> Blockchain {
-        let genesis_block = Block::mine(0, author_pubkey, author_private_key, genesis_transactions, [0u8; 32].to_vec());
+        let genesis_block = Block::mine(0, author_pubkey, author_private_key, genesis_transactions, [0u8; 32]);
         let tx_hash_to_tx = genesis_block
             .txs
             .iter()
