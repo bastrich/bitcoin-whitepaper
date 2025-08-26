@@ -19,7 +19,7 @@ pub struct Block {
 }
 
 impl Block {
-    const TARGET_PREFIX: [u8; 1] = [0];
+    const TARGET_PREFIX: [u8; 2] = [0, 0];
 
     pub fn mine(
         serial_number: u64,
@@ -75,7 +75,7 @@ impl Block {
         txs: &Vec<Tx>
     ) -> Result<Tx, String> {
         let mining_reward_output = Self::build_mining_reward_output(author_private_key.get_public_key().to_bytes());
-        let fee_output = Self::build_fee_output(author_private_key.get_public_key().to_bytes(), &txs);
+        let fee_output = Self::build_fee_output(author_private_key.get_public_key().to_bytes(), &txs)?;
         let coinbase_outputs = once(mining_reward_output)
             .chain(fee_output)
             .collect();
@@ -93,22 +93,25 @@ impl Block {
         })
     }
 
-    fn build_fee_output(pubkey: [u8; 33], txs: &Vec<Tx>) -> Option<Rc<UTXOData>> {
+    fn build_fee_output(pubkey: [u8; 33], txs: &[Tx]) -> Result<Option<Rc<UTXOData>>, String> {
         let fee: Decimal  = txs.iter()
-            .map(|tx| {
-                let inputs_sum: Decimal = tx.inputs.iter().map(|i| i.data.upgrade().unwrap().amount).sum();
+            .try_fold(Decimal::ZERO, |sum, tx| {
+                let inputs_sum: Decimal = tx.inputs.iter()
+                    .try_fold(
+                        Decimal::ZERO,
+                        |inputs_sum, input| Ok::<Decimal, String>(inputs_sum + input.data.upgrade().ok_or_else(|| "Input reference is expected to refer a valid UTXO data".to_string())?.amount)
+                    )?;
                 let outputs_sum: Decimal  = tx.outputs.iter().map(|o| o.amount).sum();
-                inputs_sum - outputs_sum
-            })
-            .sum();
+                Ok::<Decimal, String>(sum + inputs_sum - outputs_sum)
+            })?;
 
         if fee > Decimal::zero() {
-            Some(Rc::new(UTXOData {
+            Ok(Some(Rc::new(UTXOData {
                 amount: Decimal::from(fee),
-                pubkey: pubkey,
-            }))
+                pubkey,
+            })))
         } else {
-            None
+            Ok(None)
         }
     }
 }
@@ -117,13 +120,27 @@ impl Block {
 mod tests {
     use rand_core::RngCore;
     use secp256k1::rand;
+    use secp256k1::rand::Rng;
+    use crate::blockchain::utxo::UTXOReference;
     use super::*;
 
     #[test]
     fn test_mine() {
         let serial_number = 123;
         let private_key = K256PrivateSignatureKey::generate();
-        let txs = vec![];
+        let sender_utxo_data = (0..rand::rng().random_range(1..10))
+            .map(|_| {
+                let sender_private_key = K256PrivateSignatureKey::generate();
+                let utxos = generate_utxo_data(sender_private_key.get_public_key().to_bytes());
+                (sender_private_key, utxos)
+            })
+            .collect::<Vec<_>>();
+        let txs = sender_utxo_data.iter()
+            .map(|(private_key, utxos)| {
+                generate_random_tx(private_key, utxos)
+            })
+            .collect::<Vec<_>>();
+        let txs_len = txs.len();
         let prev_hash = generate_random_bytes::<32>();
 
         let block = Block::mine(
@@ -132,6 +149,16 @@ mod tests {
             txs,
             prev_hash
         );
+        assert!(block.is_ok(), "Expected successful block, got: {:?}", block.err());
+
+        let block = block.unwrap();
+        assert_eq!(block.serial_number, serial_number);
+        assert!(block.timestamp < UNIX_EPOCH.elapsed().unwrap().as_millis());
+        assert_eq!(block.author_pubkey, private_key.get_public_key());
+        assert!(block.hash.starts_with(&[0u8]));
+        assert_eq!(block.txs.len(), txs_len + 1);
+        assert!(block.nonce > 0);
+        assert_eq!(block.prev_hash, prev_hash);
     }
 
     fn generate_random_bytes<const N: usize>() -> [u8; N] {
@@ -139,5 +166,46 @@ mod tests {
         let mut bytes = [0u8; N];
         random_generator.fill_bytes(&mut bytes);
         bytes
+    }
+
+    fn generate_utxo_data(pubkey: [u8; 33]) -> Vec<Rc<UTXOData>> {
+        vec![
+            Rc::new(UTXOData {
+                amount: Decimal::from(rand::rng().random_range(0..100)),
+                pubkey
+            }),
+            Rc::new(UTXOData {
+                amount: Decimal::from(rand::rng().random_range(0..100)),
+                pubkey
+            })
+        ]
+    }
+
+    fn generate_random_tx(
+        sender_private_key: &K256PrivateSignatureKey, sender_utxos: &Vec<Rc<UTXOData>>
+    ) -> Tx {
+
+        let sender_utxo_reference_1 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&sender_utxos[0])
+        };
+        let sender_utxo_reference_2 = UTXOReference {
+            tx_hash: generate_random_bytes::<32>(),
+            output_index: rand::rng().random_range(0..100),
+            data: Rc::downgrade(&sender_utxos[1])
+        };
+
+        let receiver_public_key = K256PrivateSignatureKey::generate().get_public_key();
+        let receiver_utxo_data = Rc::new(UTXOData {
+            amount: Decimal::from(rand::rng().random_range(0..100)),
+            pubkey: receiver_public_key.to_bytes()
+        });
+
+        Tx::new(
+            vec![sender_utxo_reference_1, sender_utxo_reference_2],
+            vec![Rc::clone(&receiver_utxo_data)],
+            &sender_private_key,
+        ).expect("Successfully creating transaction expected")
     }
 }

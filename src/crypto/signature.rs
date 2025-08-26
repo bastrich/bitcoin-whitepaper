@@ -47,7 +47,6 @@ impl PublicSignatureKey<64> for K256PublicSignatureKey {
     }
 }
 
-
 pub struct K256PrivateSignatureKey {
     key: SecretKey
 }
