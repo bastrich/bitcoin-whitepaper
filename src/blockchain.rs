@@ -20,18 +20,18 @@ struct Blockchain {
 }
 
 impl Blockchain {
-    fn new(genesis_transactions: Vec<Tx>, author_pubkey: K256PublicSignatureKey, author_private_key: K256PrivateSignatureKey) -> Blockchain {
-        let genesis_block = Block::mine(0, author_pubkey, author_private_key, genesis_transactions, [0u8; 32]);
+    fn new(genesis_transactions: Vec<Tx>, author_pubkey: K256PublicSignatureKey, author_private_key: K256PrivateSignatureKey) -> Result<Blockchain, String> {
+        let genesis_block = Block::mine(0, &author_private_key, genesis_transactions, [0u8; 32])?;
         let tx_hash_to_tx = genesis_block
             .txs
             .iter()
             .map(|tx| (tx.hash, Rc::clone(tx)))
             .collect::<HashMap<[u8; 32], Rc<Tx>>>();
-        Blockchain {
+        Ok(Blockchain {
             blocks: vec![genesis_block],
             tx_hash_to_tx,
             mempool: vec![],
-        }
+        })
     }
 
     fn get_balance(&self, pubkey: [u8; 33]) -> Decimal {
@@ -149,18 +149,17 @@ impl Blockchain {
         Ok(())
     }
 
-    fn mine_next_block(&mut self, author_pubkey: K256PublicSignatureKey, author_private_key: K256PrivateSignatureKey) {
+    fn mine_next_block(&mut self, author_pubkey: K256PublicSignatureKey, author_private_key: K256PrivateSignatureKey) -> Result<(), String> {
         if self.mempool.is_empty() {
-            return;
+            return Ok(());
         }
 
         let new_block = Block::mine(
             self.blocks.len() as u64,
-            author_pubkey,
-            author_private_key,
+            &author_private_key,
             mem::take(&mut self.mempool),
             self.blocks.last().unwrap().hash.clone(),
-        );
+        )?;
 
         for (hash, tx) in new_block
             .txs
@@ -171,5 +170,7 @@ impl Blockchain {
         }
 
         self.blocks.push(new_block);
+
+        Ok(())
     }
 }
