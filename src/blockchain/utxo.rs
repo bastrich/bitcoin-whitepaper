@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::rc::Weak;
 use derivative::Derivative;
 use rust_decimal::Decimal;
@@ -11,6 +12,18 @@ pub struct UTXOReference {
     #[derivative(PartialEq="ignore")]
     #[derivative(Hash="ignore")]
     pub data: Weak<UTXOData>
+}
+
+impl PartialOrd for UTXOReference {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.data.upgrade().unwrap().amount.partial_cmp(&other.data.upgrade().unwrap().amount)
+    }
+}
+
+impl Ord for UTXOReference {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.data.upgrade().unwrap().amount.cmp(&other.data.upgrade().unwrap().amount)
+    }
 }
 
 impl UTXOReference {
