@@ -21,8 +21,20 @@ struct Blockchain {
 }
 
 impl Blockchain {
-    fn new(genesis_transactions: Vec<Tx>, author_private_key: K256PrivateSignatureKey) -> Result<Blockchain, String> {
-        let genesis_block = Block::mine(0, &author_private_key, genesis_transactions, [0u8; 32])?;
+    fn new(genesis_balances: Vec<([u8; 33], Decimal)>, author_private_key: K256PrivateSignatureKey) -> Result<Blockchain, String> {
+        let genesis_transaction = Tx::new(
+            vec![],
+            genesis_balances.into_iter().map(|(pubkey, balance)| {
+                Rc::new(UTXOData {
+                    amount: balance,
+                    pubkey
+                })
+            }).collect(),
+            &author_private_key
+        ).map_err(|error| format!("Can´t create genesis transaction: {}", error))?;
+
+        let genesis_block = Block::mine(0, &author_private_key, vec![genesis_transaction], [0u8; 32])?;
+
         let available_outputs = genesis_block
             .txs
             .iter()
@@ -35,11 +47,11 @@ impl Blockchain {
                         data: Rc::downgrade(&output)
                     })
             )
-            .map(|output: UTXOReference| (output.data.upgrade().unwrap().pubkey, output))
-            .fold(HashMap::new(), |mut acc, (k, v)| {
-                acc.entry(k).or_insert_with(MinHeap::new).push(v);
-                acc
-            });
+            .try_fold(HashMap::new(), |mut acc, (output)| {
+                let pubkey = output.data.upgrade().ok_or_else(|| "Input reference is expected to refer a valid UTXO data".to_string())?.pubkey;
+                acc.entry(pubkey).or_insert_with(MinHeap::new).push(output);
+                Ok::<HashMap<[u8; 33], MinHeap<UTXOReference>>, String>(acc)
+            })?;
 
         Ok(Blockchain {
             blocks: vec![genesis_block],
@@ -90,7 +102,6 @@ impl Blockchain {
 
     fn create_tx_in_mempool(
         &mut self,
-        source_public_key: [u8; 33],
         source_private_key: K256PrivateSignatureKey,
         amount: Decimal,
         destination_pubkey: [u8; 33],
@@ -146,7 +157,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_blockchain() {
+    fn test_create_new_blockchain() {
 
     }
 }
