@@ -27,7 +27,7 @@ impl Block {
         mut txs: Vec<Tx>,
         prev_hash: [u8; 32],
     ) -> Result<Block, String> {
-        let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis();
+        let timestamp = UNIX_EPOCH.elapsed().map_err(|e| format!("Can't get current timestamp: {}", e))?.as_millis();
         let author_pubkey = author_private_key.get_public_key();
         let coinbase_tx = Self::build_coinbase_tx(author_private_key, &txs)?;
 

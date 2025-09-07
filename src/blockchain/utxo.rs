@@ -16,13 +16,13 @@ pub struct UTXOReference {
 
 impl PartialOrd for UTXOReference {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.data.upgrade().unwrap().amount.partial_cmp(&other.data.upgrade().unwrap().amount)
+        self.data.upgrade().expect("Input reference is expected to refer a valid UTXO data").amount.partial_cmp(&other.data.upgrade().expect("Input reference is expected to refer a valid UTXO data").amount)
     }
 }
 
 impl Ord for UTXOReference {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.data.upgrade().unwrap().amount.cmp(&other.data.upgrade().unwrap().amount)
+        self.data.upgrade().expect("Input reference is expected to refer a valid UTXO data").amount.cmp(&other.data.upgrade().expect("Input reference is expected to refer a valid UTXO data").amount)
     }
 }
 
