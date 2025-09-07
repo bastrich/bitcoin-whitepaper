@@ -5,14 +5,14 @@ mod utxo;
 use crate::blockchain::block::Block;
 use crate::blockchain::tx::Tx;
 use crate::blockchain::utxo::{UTXOData, UTXOReference};
-use crate::crypto::signature::{K256PrivateSignatureKey, K256PublicSignatureKey, PrivateSignatureKey, PublicSignatureKey};
+use crate::crypto::signature::{K256PrivateSignatureKey, PrivateSignatureKey, PublicSignatureKey};
 use itertools::Itertools;
 use min_heap::MinHeap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap};
 use std::mem;
-use std::rc::{Rc, Weak};
+use std::rc::{Rc};
 
 struct Blockchain {
     blocks: Vec<Block>,
@@ -21,9 +21,8 @@ struct Blockchain {
 }
 
 impl Blockchain {
-    fn new(genesis_balances: Vec<([u8; 33], Decimal)>, author_private_key: K256PrivateSignatureKey) -> Result<Blockchain, String> {
-        let genesis_transaction = Tx::new(
-            vec![],
+    pub fn new(genesis_balances: HashMap<[u8; 33], Decimal>, author_private_key: K256PrivateSignatureKey) -> Result<Blockchain, String> {
+        let genesis_transaction = Tx::new_genesis(
             genesis_balances
                 .into_iter()
                 .map(|(pubkey, balance)| Rc::new(UTXOData { amount: balance, pubkey }))
@@ -61,7 +60,7 @@ impl Blockchain {
         })
     }
 
-    fn get_balance(&self, pubkey: [u8; 33]) -> Result<Decimal, &str> {
+    pub fn get_balance(&self, pubkey: [u8; 33]) -> Result<Decimal, &str> {
         let available_outputs = self.available_outputs.get(&pubkey).ok_or_else(|| "Address not found")?;
         Ok(
             available_outputs.iter()
@@ -100,7 +99,7 @@ impl Blockchain {
             }));
         }
 
-        Tx::new(tx_inputs, tx_outputs, &source_private_key)
+        Tx::new_regular(tx_inputs, tx_outputs, &source_private_key)
     }
 
     fn create_tx_in_mempool(
@@ -155,10 +154,25 @@ impl Blockchain {
 
 #[cfg(test)]
 mod tests {
+    use secp256k1::rand;
+    use secp256k1::rand::Rng;
     use super::*;
 
     #[test]
     fn test_create_new_blockchain() {
+        let address1 = K256PrivateSignatureKey::generate().get_public_key().to_bytes();
+        let balance1 = Decimal::from_f64_retain(rand::rng().random_range(1.0..100.0)).unwrap();
+        let address2 = K256PrivateSignatureKey::generate().get_public_key().to_bytes();
+        let balance2 = Decimal::from_f64_retain(rand::rng().random_range(1.0..100.0)).unwrap();
 
+        let author_private_key = K256PrivateSignatureKey::generate();
+
+        let blockchain = Blockchain::new(
+            HashMap::from([(address1, balance1), (address2, balance2)]),
+            author_private_key
+        ).map_err(|e| format!("Blockchain creation failed: {e}")).unwrap();
+
+        assert_eq!(blockchain.get_balance(address1).unwrap(), balance1);
+        assert_eq!(blockchain.get_balance(address2).unwrap(), balance2);
     }
 }

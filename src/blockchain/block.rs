@@ -79,7 +79,7 @@ impl Block {
         let coinbase_outputs = once(mining_reward_output)
             .chain(fee_output)
             .collect();
-        Tx::new(
+        Tx::new_regular(
             vec![],
             coinbase_outputs,
             &author_private_key
@@ -202,7 +202,7 @@ mod tests {
             pubkey: receiver_public_key.to_bytes()
         });
 
-        Tx::new(
+        Tx::new_regular(
             vec![sender_utxo_reference_1, sender_utxo_reference_2],
             vec![Rc::clone(&receiver_utxo_data)],
             &sender_private_key,

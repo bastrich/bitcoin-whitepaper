@@ -13,10 +13,27 @@ pub struct Tx {
 }
 
 impl Tx {
-    pub fn new(
+    pub fn new_regular(
+        inputs: Vec<UTXOReference>,
+        outputs: Vec<Rc<UTXOData>>,
+        private_signature_key: &K256PrivateSignatureKey
+    ) -> Result<Self, String> {
+        Self::new(inputs, outputs, private_signature_key, false)
+    }
+
+    pub fn new_genesis(
+        outputs: Vec<Rc<UTXOData>>,
+        private_signature_key: &K256PrivateSignatureKey
+    ) -> Result<Self, String> {
+        Self::new(vec![], outputs, private_signature_key, true)
+    }
+    
+    
+    fn new(
         inputs: Vec<UTXOReference>,
         outputs: Vec<Rc<UTXOData>>,
         private_signature_key: &K256PrivateSignatureKey,
+        is_genesis_tx: bool
     ) -> Result<Self, String> {
         if outputs.is_empty() {
             return Err("No outputs specified".to_string());
@@ -34,16 +51,18 @@ impl Tx {
 
         match input_pubkeys.len() {
             0 => {
-                let output_pubkeys: Vec<[u8; 33]> = outputs.iter()
-                    .map(|output| output.pubkey)
-                    .unique()
-                    .collect();
-                if output_pubkeys.len() > 1 {
-                    return Err("If there are no inputs, only a single destination (mining fee) allowed".to_string());
+                if !is_genesis_tx {
+                    let output_pubkeys: Vec<[u8; 33]> = outputs.iter()
+                        .map(|output| output.pubkey)
+                        .unique()
+                        .collect();
+                    if output_pubkeys.len() > 1 {
+                        return Err("If there are no inputs, only a single destination (mining fee) allowed".to_string());
 
-                }
-                if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(output_pubkeys[0])?) {
-                    return Err("If there are no inputs, public key of the output should correspond to the signer private key".to_string());
+                    }
+                    if !private_signature_key.is_pair_for(K256PublicSignatureKey::from_bytes(output_pubkeys[0])?) {
+                        return Err("If there are no inputs, public key of the output should correspond to the signer private key".to_string());
+                    }
                 }
             }
             1 => {
@@ -114,7 +133,7 @@ mod tests {
         let private_key = K256PrivateSignatureKey::generate();
 
         assert_error(
-            Tx::new(vec![], vec![], &private_key),
+            Tx::new_regular(vec![], vec![], &private_key),
             "No outputs specified"
         );
     }
@@ -134,7 +153,7 @@ mod tests {
         let utxo_reference_duplicate = utxo_reference.clone();
 
         assert_error(
-            Tx::new(vec![utxo_reference, utxo_reference_duplicate], vec![Rc::clone(&utxo_data)], &private_key),
+            Tx::new_regular(vec![utxo_reference, utxo_reference_duplicate], vec![Rc::clone(&utxo_data)], &private_key),
             "Duplicated inputs specified"
         );
     }
@@ -153,7 +172,7 @@ mod tests {
         });
 
         assert_error(
-            Tx::new(vec![], vec![Rc::clone(&utxo_data_1), Rc::clone(&utxo_data_2)], &private_key_1),
+            Tx::new_regular(vec![], vec![Rc::clone(&utxo_data_1), Rc::clone(&utxo_data_2)], &private_key_1),
             "If there are no inputs, only a single destination (mining fee) allowed"
         );
     }
@@ -168,7 +187,7 @@ mod tests {
         });
 
         assert_error(
-            Tx::new(vec![], vec![Rc::clone(&utxo_data)], &private_key_2),
+            Tx::new_regular(vec![], vec![Rc::clone(&utxo_data)], &private_key_2),
             "If there are no inputs, public key of the output should correspond to the signer private key"
         );
     }
@@ -188,7 +207,7 @@ mod tests {
         };
 
         assert_error(
-            Tx::new(vec![utxo_reference], vec![Rc::clone(&utxo_data)], &private_key_2),
+            Tx::new_regular(vec![utxo_reference], vec![Rc::clone(&utxo_data)], &private_key_2),
             "Public key of the inputs should correspond to the signer private key"
         );
     }
@@ -216,7 +235,7 @@ mod tests {
             data: Rc::downgrade(&utxo_data_2)
         };
         assert_error(
-            Tx::new(vec![utxo_reference_1, utxo_reference_2], vec![Rc::clone(&utxo_data_1)], &private_key_1),
+            Tx::new_regular(vec![utxo_reference_1, utxo_reference_2], vec![Rc::clone(&utxo_data_1)], &private_key_1),
             "Only a single source address allowed"
         );
     }
@@ -249,7 +268,7 @@ mod tests {
             pubkey: private_key_2.get_public_key().to_bytes()
         });
 
-        let tx = Tx::new(
+        let tx = Tx::new_regular(
             vec![utxo_reference_1, utxo_reference_2],
             vec![Rc::clone(&utxo_data_3)],
             &private_key_1,

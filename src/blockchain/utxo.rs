@@ -56,7 +56,6 @@ impl UTXOData {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
     use rand_core::RngCore;
     use secp256k1::rand;
     use secp256k1::rand::Rng;
