@@ -1,9 +1,10 @@
+use std::fmt::{Display, Formatter};
 use secp256k1::{rand, PublicKey, SecretKey};
 use secp256k1::{Secp256k1, Message};
 use secp256k1::ecdsa::Signature;
 use sha2::{Digest, Sha256};
 
-pub trait PublicSignatureKey<const N: usize>: Eq + Sized {
+pub trait PublicSignatureKey<const N: usize>: Eq + Sized + Display {
     fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; N]) -> Result<(), String>;
     fn to_bytes(&self) -> impl AsRef<[u8]>;
     fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, String>;
@@ -44,6 +45,12 @@ impl PublicSignatureKey<64> for K256PublicSignatureKey {
             key: PublicKey::from_byte_array_compressed(bytes.as_ref().try_into().map_err(|e| format!("Expected exactly 33 bytes: {e}"))?)
                 .map_err(|e| format!("Error creating public key from bytes: {e}"))?
         })
+    }
+}
+
+impl Display for K256PublicSignatureKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.key.to_string())
     }
 }
 
