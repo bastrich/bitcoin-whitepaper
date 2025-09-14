@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use secp256k1::{rand, PublicKey, SecretKey};
 use secp256k1::{Secp256k1, Message};
 use secp256k1::ecdsa::Signature;
-use sha2::{Digest, Sha256};
+use crate::hash;
 
 pub trait PublicSignatureKey<const N: usize>: Eq + Sized + Display {
     fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; N]) -> Result<(), String>;
@@ -31,7 +31,7 @@ impl PublicSignatureKey<64> for K256PublicSignatureKey {
     fn verify(&self, data: impl AsRef<[u8]>, signature: &[u8; 64]) -> Result<(), String> {
         Signature::from_compact(signature)
             .map_err(|e| format!("Signature could not be decoded: {e}"))?
-            .verify(Message::from_digest(Sha256::digest(data).into()), &self.key)
+            .verify(Message::from_digest(hash!(data.as_ref())), &self.key)
             .map_err(|e| format!("Signature could not be decoded: {e}"))
     }
 
@@ -69,7 +69,7 @@ impl PrivateSignatureKey<64> for K256PrivateSignatureKey {
 
     fn sign(&self, data: &[u8]) -> [u8; 64] {
         let mut signature = Secp256k1::new().sign_ecdsa(
-            Message::from_digest(Sha256::digest(data).into()),
+            Message::from_digest(hash!(data)),
             &self.key
         );
         signature.normalize_s();

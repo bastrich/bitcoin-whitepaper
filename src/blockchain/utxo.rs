@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::rc::Weak;
 use derivative::Derivative;
 use rust_decimal::Decimal;
-use sha2::{Digest, Sha256};
+use crate::hash;
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Hash, Clone)]
@@ -28,12 +28,12 @@ impl Ord for UTXOReference {
 
 impl UTXOReference {
     pub fn calculate_crypto_hash(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update("UTXOReference:v1:");
-        hasher.update(&self.tx_hash);
-        hasher.update(":");
-        hasher.update(&self.output_index.to_le_bytes());
-        hasher.finalize().into()
+        hash!(
+            "UTXOReference:v1:",
+            &self.tx_hash,
+            ":",
+            &self.output_index.to_le_bytes()
+        )
     }
 }
 
@@ -45,12 +45,12 @@ pub struct UTXOData {
 
 impl UTXOData {
     pub fn calculate_crypto_hash(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update("UTXOData:v1:");
-        hasher.update(&self.amount.serialize());
-        hasher.update(":");
-        hasher.update(&self.pubkey);
-        hasher.finalize().into()
+        hash!(
+           "UTXOData:v1:",
+            &self.amount.serialize(),
+            ":",
+            &self.pubkey
+        )
     }
 }
 

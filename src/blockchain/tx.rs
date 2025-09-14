@@ -1,9 +1,8 @@
-
 use crate::blockchain::utxo::{UTXOData, UTXOReference};
 use crate::crypto::signature::{K256PrivateSignatureKey, K256PublicSignatureKey, PrivateSignatureKey, PublicSignatureKey};
 use std::rc::Rc;
 use itertools::Itertools;
-use sha2::{Digest, Sha256};
+use crate::hash;
 
 pub struct Tx {
     pub hash: [u8; 32],
@@ -75,14 +74,12 @@ impl Tx {
             }
         }
 
-        let data_bytes = Self::convert_to_bytes(&inputs, &outputs);
-        let signature = private_signature_key.sign(data_bytes.as_ref());
-
-        let mut hasher = Sha256::new();
-        hasher.update(data_bytes);
-        hasher.update(":");
-        hasher.update(signature);
-        let hash = hasher.finalize().into();
+        let (signature, hash) = {
+            let data_bytes = Self::convert_to_bytes(&inputs, &outputs);
+            let signature = private_signature_key.sign(data_bytes.as_ref());
+            let hash = hash!(data_bytes.as_ref(), ":", signature);
+            (signature, hash)
+        };
 
         Ok(Self {
             hash,

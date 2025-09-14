@@ -3,10 +3,10 @@ use std::rc::Rc;
 use std::time::UNIX_EPOCH;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
-use sha2::{Digest, Sha256};
 use crate::blockchain::tx::Tx;
 use crate::blockchain::utxo::UTXOData;
 use crate::crypto::signature::{K256PrivateSignatureKey, K256PublicSignatureKey, PrivateSignatureKey, PublicSignatureKey};
+use crate::hash;
 
 pub struct Block {
     pub serial_number: u64,
@@ -35,20 +35,17 @@ impl Block {
 
         let (nonce, hash) = (0..=u32::MAX)
             .find_map(|nonce| {
-                let mut hasher = Sha256::new();
+                let hash: [u8; 32] = hash!(
+                    "Block:v1:",
+                    serial_number.to_le_bytes(),
+                    ":",
+                    timestamp.to_le_bytes(),
+                    ":",
+                    txs.iter().map(|tx| tx.hash).collect::<Vec<_>>(),
+                    nonce.to_le_bytes(),
+                    prev_hash.as_slice()
+                );
 
-                hasher.update(b"Block:v1:");
-                hasher.update(serial_number.to_le_bytes());
-                hasher.update(b":");
-                hasher.update(timestamp.to_le_bytes());
-                hasher.update(b":");
-                for tx in &txs {
-                    hasher.update(tx.hash);
-                }
-                hasher.update(nonce.to_le_bytes());
-                hasher.update(prev_hash.as_slice());
-
-                let hash: [u8; 32] = hasher.finalize().into();
                 if hash.starts_with(&Self::TARGET_PREFIX) {
                     Some((nonce, hash))
                 } else {
